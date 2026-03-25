@@ -128,7 +128,6 @@ client.connect({
   gecos: 'MiniBud Helper Program',
   auto_reconnect: true,
   auto_reconnect_wait: 10000,
-  auto_reconnect_max_retries: 0,
 });
 
 client.on('registered', () => {
@@ -179,9 +178,10 @@ client.on('message', async (event) => {
 
 client.on('close', () => {
   console.log('[MiniBud] Connection closed, will reconnect...');
-  // Keep process alive for auto-reconnect
-  setTimeout(() => {}, 30000);
 });
+
+// Keep process alive indefinitely (required for auto-reconnect to work)
+setInterval(() => {}, 60000);
 
 client.on('error', (err) => {
   console.error('[MiniBud] IRC error:', err);
