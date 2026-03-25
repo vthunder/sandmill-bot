@@ -118,6 +118,21 @@ async function askClaude(channel, userMessage) {
   return reply;
 }
 
+const DISCORD_WEBHOOK_URL = process.env.DISCORD_WEBHOOK_URL;
+
+async function notifyDiscord(message) {
+  if (!DISCORD_WEBHOOK_URL) return;
+  try {
+    await fetch(DISCORD_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: message }),
+    });
+  } catch (err) {
+    console.error('[MiniBud] Discord notification failed:', err.message);
+  }
+}
+
 const client = new IRC.Client();
 
 client.connect({
@@ -133,6 +148,14 @@ client.connect({
 client.on('registered', () => {
   console.log(`[MiniBud] Connected to ${IRC_SERVER}:${IRC_PORT}, joining ${IRC_CHANNEL}`);
   client.join(IRC_CHANNEL);
+});
+
+client.on('join', (event) => {
+  const { nick, channel } = event;
+  if (nick === BOT_NICK) return;
+  console.log(`[MiniBud] ${nick} joined ${channel}`);
+  client.say(channel, `${nick}: Welcome to #sandmill! I'm MiniBud, helper program since '96. Type my name to chat.`);
+  notifyDiscord(`**${nick}** joined ${channel} on irc.sandmill.org`);
 });
 
 client.on('message', async (event) => {
@@ -177,11 +200,9 @@ client.on('message', async (event) => {
 });
 
 client.on('close', () => {
-  console.log('[MiniBud] Connection closed, will reconnect...');
+  console.log('[MiniBud] Connection closed, restarting in 15s...');
+  setTimeout(() => process.exit(1), 15000);
 });
-
-// Keep process alive indefinitely (required for auto-reconnect to work)
-setInterval(() => {}, 60000);
 
 client.on('error', (err) => {
   console.error('[MiniBud] IRC error:', err);
