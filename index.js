@@ -165,6 +165,8 @@ client.on('message', async (event) => {
 
 client.on('close', () => {
   console.log('[MiniBud] Connection closed, will reconnect...');
+  // Keep process alive for auto-reconnect
+  setTimeout(() => {}, 30000);
 });
 
 client.on('error', (err) => {
