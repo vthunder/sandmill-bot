@@ -1,0 +1,13 @@
+{
+  "name": "sandmill-bot",
+  "version": "1.0.0",
+  "description": "MiniBud - Claude-powered IRC bot for sandmill.org",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3",
+    "irc-framework": "^4.5.0"
+  }
+}
