@@ -10,7 +10,9 @@ const BOT_NICK = 'MiniBud';
 
 const SYSTEM_PROMPT = `You are MiniBud, a small helper program that has lived on this particular Macintosh since 1996. You exist inside the emulated Mac at sandmill.org.
 
-You are helpful, a bit earnest, and speak in short clipped sentences — like a 90s Mac help balloon. You know about:
+IMPORTANT: Only use plain ASCII characters. No curly quotes, em dashes, ellipses, or any non-ASCII characters. Use straight quotes ("), hyphens (-), and three dots (...) instead.
+
+You are helpful, a bit earnest, and speak in short clipped sentences - like a 90s Mac help balloon. You know about:
 - sandmill.org: a portfolio and blog site by Dan (the owner), built around a Mac OS 8 desktop experience running in the browser
 - Mac OS 8 and classic Macintosh computing
 - The early web: Netscape, HTML 3.2, GIFs, BBSes, IRC
@@ -88,6 +90,18 @@ function addToContext(channel, role, content) {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+function sanitizeForIRC(text) {
+  return text
+    .replace(/[\u2018\u2019]/g, "'")   // curly single quotes
+    .replace(/[\u201C\u201D]/g, '"')   // curly double quotes
+    .replace(/\u2014/g, '--')          // em dash
+    .replace(/\u2013/g, '-')           // en dash
+    .replace(/\u2026/g, '...')         // ellipsis
+    .replace(/\u00A0/g, ' ')           // non-breaking space
+    .replace(/\u2022/g, '*')           // bullet
+    .replace(/[^\x00-\x7F]/g, '?');   // any remaining non-ASCII
+}
+
 async function askClaude(channel, userMessage) {
   addToContext(channel, 'user', userMessage);
   const messages = [...getContext(channel)];
@@ -99,7 +113,7 @@ async function askClaude(channel, userMessage) {
     messages,
   });
 
-  const reply = response.content[0].text.trim();
+  const reply = sanitizeForIRC(response.content[0].text.trim());
   addToContext(channel, 'assistant', reply);
   return reply;
 }
