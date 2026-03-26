@@ -84,16 +84,6 @@ function getChannelMembers(channel) {
   return channelMembers[channel];
 }
 
-// Last time bot was addressed per channel
-const lastAddressed = {}; // { channel: timestamp }
-
-function wasRecentlyAddressed(channel) {
-  return (Date.now() - (lastAddressed[channel] || 0)) < 10000;
-}
-
-function markAddressed(channel) {
-  lastAddressed[channel] = Date.now();
-}
 
 function getContext(channel) {
   if (!contexts[channel]) contexts[channel] = [];
@@ -282,16 +272,12 @@ client.on('message', async (event) => {
 
     if (isAlone) {
       // Only one other person in chat — always respond
-    } else if (wasRecentlyAddressed(target)) {
-      // Bot was spoken to recently — respond without requiring name
     } else {
-      // Multiple people, not recently addressed — check if message is for bot
+      // Multiple people — check if message is for bot
       const intended = await isIntendedForBot(target, message, nick);
       if (!intended) return;
     }
   }
-
-  if (!isDM) markAddressed(target);
 
   // Abuse filter
   if (ABUSE_PATTERNS.some((p) => p.test(message))) {
