@@ -90,6 +90,28 @@ function addToContext(channel, role, content) {
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const LLMS_TXT_URL = process.env.LLMS_TXT_URL || 'https://sandmill.org/llms.txt';
+let siteSummary = '';
+
+async function loadSiteSummary() {
+  try {
+    const res = await fetch(LLMS_TXT_URL);
+    if (res.ok) {
+      siteSummary = await res.text();
+      console.log(`[MiniBud] Loaded site summary from ${LLMS_TXT_URL} (${siteSummary.length} chars)`);
+    } else {
+      console.warn(`[MiniBud] Could not load site summary: HTTP ${res.status}`);
+    }
+  } catch (err) {
+    console.warn(`[MiniBud] Could not load site summary: ${err.message}`);
+  }
+}
+
+function buildSystemPrompt() {
+  if (!siteSummary) return SYSTEM_PROMPT;
+  return SYSTEM_PROMPT + '\n\n## Site Reference\n\n' + siteSummary;
+}
+
 function sanitizeForIRC(text) {
   return text
     .replace(/[\u2018\u2019]/g, "'")   // curly single quotes
@@ -109,7 +131,7 @@ async function askClaude(channel, userMessage) {
   const response = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 400,
-    system: SYSTEM_PROMPT,
+    system: buildSystemPrompt(),
     messages,
   });
 
@@ -209,3 +231,4 @@ client.on('error', (err) => {
 });
 
 console.log(`[MiniBud] Starting... connecting to ${IRC_SERVER}:${IRC_PORT}`);
+loadSiteSummary();
