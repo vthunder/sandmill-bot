@@ -76,6 +76,25 @@ function checkRateLimit(nick) {
 // Per-channel conversation context (last 4 exchanges = 8 messages)
 const contexts = {};
 
+// Track channel members (excluding bot itself)
+const channelMembers = {}; // { channel: Set<nick> }
+
+function getChannelMembers(channel) {
+  if (!channelMembers[channel]) channelMembers[channel] = new Set();
+  return channelMembers[channel];
+}
+
+// Last time bot was addressed per channel
+const lastAddressed = {}; // { channel: timestamp }
+
+function wasRecentlyAddressed(channel) {
+  return (Date.now() - (lastAddressed[channel] || 0)) < 10000;
+}
+
+function markAddressed(channel) {
+  lastAddressed[channel] = Date.now();
+}
+
 function getContext(channel) {
   if (!contexts[channel]) contexts[channel] = [];
   return contexts[channel];
@@ -122,6 +141,31 @@ function sanitizeForIRC(text) {
     .replace(/\u00A0/g, ' ')           // non-breaking space
     .replace(/\u2022/g, '*')           // bullet
     .replace(/[^\x00-\x7F]/g, '?');   // any remaining non-ASCII
+}
+
+async function isIntendedForBot(channel, message, fromNick) {
+  try {
+    const ctx = getContext(channel);
+    const recentMessages = ctx.slice(-4).map(m => `${m.role}: ${m.content}`).join('\n');
+    const prompt = `You are deciding whether an IRC message is addressed to you (MiniBud, the channel bot).
+
+Recent conversation:
+${recentMessages}
+
+New message from ${fromNick}: "${message}"
+
+Reply with only "yes" if this message is directed at you/the bot, or "no" if it's clearly meant for other humans. When in doubt, say "yes".`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 5,
+      messages: [{ role: 'user', content: prompt }],
+    });
+    return response.content[0].text.trim().toLowerCase().startsWith('yes');
+  } catch (err) {
+    console.error('[MiniBud] Error checking intent:', err.message);
+    return false;
+  }
 }
 
 async function askClaude(channel, userMessage) {
@@ -172,12 +216,54 @@ client.on('registered', () => {
   client.join(IRC_CHANNEL);
 });
 
+client.on('userlist', (event) => {
+  const { channel, users } = event;
+  const members = getChannelMembers(channel);
+  members.clear();
+  for (const user of users) {
+    const nick = user.nick || user;
+    if (nick !== BOT_NICK) members.add(nick);
+  }
+  console.log(`[MiniBud] ${channel} has ${members.size} members`);
+});
+
 client.on('join', (event) => {
   const { nick, channel } = event;
-  if (nick === BOT_NICK) return;
+  if (nick === BOT_NICK) {
+    channelMembers[channel] = new Set();
+    return;
+  }
+  getChannelMembers(channel).add(nick);
   console.log(`[MiniBud] ${nick} joined ${channel}`);
-  client.say(channel, `${nick}: Welcome to #sandmill! I'm MiniBud, helper program since '96. Type my name to chat.`);
+  client.say(channel, `${nick}: Welcome! I'm helping Dan by greeting visitors to this site, how can I help?`);
   notifyDiscord(`**${nick}** joined ${channel} on irc.sandmill.org`);
+});
+
+client.on('part', (event) => {
+  const { nick, channel } = event;
+  getChannelMembers(channel)?.delete(nick);
+});
+
+client.on('quit', (event) => {
+  const { nick } = event;
+  for (const members of Object.values(channelMembers)) {
+    members.delete(nick);
+  }
+});
+
+client.on('kick', (event) => {
+  const { kicked, channel } = event;
+  getChannelMembers(channel)?.delete(kicked);
+});
+
+client.on('nick', (event) => {
+  const { nick, new_nick } = event;
+  for (const members of Object.values(channelMembers)) {
+    if (members.has(nick)) {
+      members.delete(nick);
+      members.add(new_nick);
+    }
+  }
 });
 
 client.on('message', async (event) => {
@@ -188,10 +274,24 @@ client.on('message', async (event) => {
 
   const isDM = target === BOT_NICK;
   const isMentioned = !isDM && message.toLowerCase().includes('minibud');
-
-  if (!isDM && !isMentioned) return;
-
   const replyTo = isDM ? nick : target;
+
+  if (!isDM && !isMentioned) {
+    const members = getChannelMembers(target);
+    const isAlone = members.size <= 1;
+
+    if (isAlone) {
+      // Only one other person in chat — always respond
+    } else if (wasRecentlyAddressed(target)) {
+      // Bot was spoken to recently — respond without requiring name
+    } else {
+      // Multiple people, not recently addressed — check if message is for bot
+      const intended = await isIntendedForBot(target, message, nick);
+      if (!intended) return;
+    }
+  }
+
+  if (!isDM) markAddressed(target);
 
   // Abuse filter
   if (ABUSE_PATTERNS.some((p) => p.test(message))) {
